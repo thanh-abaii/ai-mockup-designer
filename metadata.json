@@ -1,0 +1,5 @@
+{
+  "name": "AI Mockup Designer",
+  "description": "An application that allows you to upload an image and generate realistic mockups of it in various real-world settings like bus stops, urban walls, and Times Square using AI.",
+  "requestFramePermissions": []
+}
