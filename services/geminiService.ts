@@ -10,23 +10,9 @@ if (!API_KEY) {
 const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 /**
- * Generates a creative and detailed prompt for the mockup generation.
+ * Analyzes an image and returns a concise text description.
  */
-export async function generateCreativePrompt(base64Image: string, mimeType: string, sceneContext: string, slogan: string): Promise<string> {
-    const systemInstruction = `You are a world-class creative director. Your task is to write a single, concise, and highly descriptive prompt for an AI image generation model. This prompt will be used to generate a realistic mockup of a user's provided image placed within a specific scene.
-
-Instructions:
-1.  **Analyze the User's Image:** I have provided it as input. Consider its style, colors, mood, and subject matter.
-2.  **Synthesize and Create:** Combine your analysis of the user's image with the provided scene context and optional slogan to create a single, powerful prompt. The prompt should instruct the image generator to seamlessly and realistically integrate the user's image (and slogan, if provided) into the scene. Describe the lighting, atmosphere, and textures to ensure a photorealistic result. Make it sound amazing and compelling.
-3.  **Output ONLY the prompt text.** Do not add any extra explanations, greetings, or quotation marks around the final prompt.`;
-
-    const userContent = `
-Scene Context: "${sceneContext}"
-Slogan: "${slogan || 'None'}"
-
-Generate the prompt now based on the provided image and the details above.
-    `;
-    
+export async function describeImage(base64Image: string, mimeType: string): Promise<string> {
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -39,29 +25,57 @@ Generate the prompt now based on the provided image and the details above.
                         },
                     },
                     {
-                        text: userContent,
+                        text: "Describe this image for an AI image generator. Be concise and focus on the main subject, style, and key colors. For example: 'A minimalist geometric logo with blue and orange triangles.'",
                     },
                 ],
             },
-            config: {
-                 systemInstruction: systemInstruction,
-            }
         });
-
-        const creativePrompt = response.text.trim();
-        if (!creativePrompt) {
-            throw new Error("AI creative director failed to generate a prompt.");
-        }
-        return creativePrompt;
+        return response.text;
     } catch (error) {
-        console.error("Error calling Gemini API for creative prompt:", error);
-        throw new Error("Failed to generate creative prompt from the AI service.");
+        console.error("Error calling Gemini API for image description:", error);
+        throw new Error("Failed to analyze the image with the AI service.");
+    }
+}
+
+/**
+ * Generates a creative, detailed prompt for the final mockup generation.
+ */
+export async function generateCreativePrompt(imageDescription: string, scenePrompt: string, slogan: string): Promise<string> {
+    const sloganInstruction = slogan ? `Please also tastefully and realistically incorporate the text "${slogan}" into the scene's advertisement.` : '';
+
+    const systemInstruction = `You are a creative director for an advertising agency. Your task is to write a single, detailed, and photorealistic prompt for an AI image generator that will be used to fill the transparent background around a central graphic.`;
+
+    const userContent = `
+        Here are the elements to combine:
+        1.  **Central Graphic Description:** ${imageDescription}
+        2.  **Desired Scene:** ${scenePrompt}
+        
+        Your prompt must start with this exact instruction: "Take the provided image, which features a central graphic on a transparent background. Your task is to transform the transparent background into a photorealistic scene of:"
+        
+        Continue the instruction by creatively merging the desired scene description. The central graphic must be seamlessly and realistically integrated into this new scene (e.g., as a poster, on a screen, etc.). The final result should be a single, cohesive, and high-quality image.
+        
+        ${sloganInstruction}
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: userContent,
+            config: {
+                systemInstruction: systemInstruction,
+            },
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Error calling Gemini API for creative prompt generation:", error);
+        throw new Error("Failed to brainstorm a creative concept with the AI service.");
     }
 }
 
 
 /**
- * Generates the final mockup image based on an image and a detailed prompt.
+ * Generates the final mockup image based on a pre-padded image and a detailed prompt.
+ * The AI's task is to fill the background of the provided image.
  */
 export async function generateMockup(base64Image: string, mimeType: string, prompt: string): Promise<string> {
     try {

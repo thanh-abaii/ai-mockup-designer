@@ -38,3 +38,5 @@ export const SCENES: Scene[] = [
     previewImage: 'https://images.unsplash.com/photo-1587620962725-abab7fe55159?w=400&q=80&fit=crop'
   }
 ];
+
+export const ASPECT_RATIOS: string[] = ['1:1', '16:9', '9:16', '4:3', '3:4'];

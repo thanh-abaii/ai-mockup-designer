@@ -6,14 +6,17 @@ import { SceneSelector } from './components/SceneSelector';
 import { MockupDisplay } from './components/MockupDisplay';
 import { Footer } from './components/Footer';
 import type { Scene } from './types';
-import { generateMockup, generateCreativePrompt } from './services/geminiService';
-import { SCENES } from './constants';
+import { generateMockup, describeImage, generateCreativePrompt } from './services/geminiService';
+import { SCENES, ASPECT_RATIOS } from './constants';
 import { DownloadIcon } from './components/icons/DownloadIcon';
+import { AspectRatioSelector } from './components/AspectRatioSelector';
+import { padImageToAspectRatio } from './utils/imageUtils';
 
 const App: React.FC = () => {
   const [originalImage, setOriginalImage] = useState<{ file: File; base64: string; mimeType: string; } | null>(null);
   const [slogan, setSlogan] = useState<string>('');
   const [selectedScene, setSelectedScene] = useState<Scene | null>(null);
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState<string>('1:1');
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
@@ -32,6 +35,12 @@ const App: React.FC = () => {
     setError(null);
   };
 
+  const handleAspectRatioSelect = (ratio: string) => {
+    setSelectedAspectRatio(ratio);
+    setGeneratedImage(null);
+    setError(null);
+  };
+
   const handleGenerateClick = useCallback(async () => {
     if (!originalImage || !selectedScene) {
       setError("Please upload an image and select a scene first.");
@@ -43,33 +52,29 @@ const App: React.FC = () => {
     setGeneratedImage(null);
     setLastUsedPrompt(null);
 
-    let finalPrompt = '';
-
     try {
-      // Step 1: Generate a creative prompt
+      // New Step 1: Analyze the input image
+      setLoadingMessage('Analyzing your image...');
+      const imageDescription = await describeImage(originalImage.base64, originalImage.mimeType);
+      
+      // New Step 2: Generate a creative prompt
       setLoadingMessage('Brainstorming a creative concept...');
-      finalPrompt = await generateCreativePrompt(
+      const creativePrompt = await generateCreativePrompt(imageDescription, selectedScene.prompt, slogan);
+      setLastUsedPrompt(creativePrompt);
+
+      // Step 3: Pad the image to the correct aspect ratio on the client-side
+      setLoadingMessage('Preparing image for AI...');
+      const { base64: paddedBase64, mimeType: paddedMimeType } = await padImageToAspectRatio(
         originalImage.base64,
         originalImage.mimeType,
-        selectedScene.prompt, // This is now scene context
-        slogan
+        selectedAspectRatio
       );
-    } catch (err) {
-      console.warn("Creative prompt generation failed. Falling back to default prompt.", err);
-      // Fallback to the original simple prompt logic
-      finalPrompt = selectedScene.prompt;
-       if (slogan.trim()) {
-        finalPrompt += ` Please also tastefully incorporate the text "${slogan.trim()}" into the advertisement.`;
-      }
-    }
 
-    setLastUsedPrompt(finalPrompt);
-
-    try {
-      // Step 2: Generate the mockup with the (potentially creative) prompt
-      setLoadingMessage('Bringing the idea to life...');
-      const result = await generateMockup(originalImage.base64, originalImage.mimeType, finalPrompt);
+      // Step 4: Generate the mockup with the padded image and new creative prompt
+      setLoadingMessage('Generating the mockup scene...');
+      const result = await generateMockup(paddedBase64, paddedMimeType, creativePrompt);
       setGeneratedImage(result);
+
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "An unknown error occurred during mockup generation.");
@@ -77,7 +82,7 @@ const App: React.FC = () => {
       setIsLoading(false);
       setLoadingMessage(null);
     }
-  }, [originalImage, selectedScene, slogan]);
+  }, [originalImage, selectedScene, slogan, selectedAspectRatio]);
 
   const handleDownload = useCallback(() => {
     if (!generatedImage) return;
@@ -98,66 +103,61 @@ const App: React.FC = () => {
           {/* Left Column: Controls */}
           <div className="flex flex-col gap-8">
             <div>
-              <h2 className="text-2xl font-bold mb-4 text-cyan-400">1. Provide Your Assets</h2>
-               <div className="flex flex-col gap-4 p-4 bg-gray-800/50 rounded-lg">
-                <ImageUploader onImageUpload={handleImageUpload} />
-                 <div>
-                  <label htmlFor="slogan-input" className="block text-sm font-medium text-gray-300 mb-2">
-                    Add Slogan (Optional)
-                  </label>
-                  <input
-                    id="slogan-input"
-                    type="text"
-                    value={slogan}
-                    onChange={(e) => setSlogan(e.target.value)}
-                    placeholder="e.g., 'Your slogan here...'"
-                    className="w-full bg-gray-700 border-2 border-gray-600 rounded-lg py-2 px-3 text-white placeholder-gray-400 focus:ring-cyan-500 focus:border-cyan-500 transition"
-                  />
-                </div>
-              </div>
+              <h2 className="text-xl font-bold mb-3 text-cyan-400">1. Upload Your Image</h2>
+              <ImageUploader onImageUpload={handleImageUpload} />
             </div>
+
             <div>
-              <h2 className="text-2xl font-bold mb-4 text-cyan-400">2. Select a Scene</h2>
-              <SceneSelector
-                scenes={SCENES}
-                selectedScene={selectedScene}
-                onSceneSelect={handleSceneSelect}
+              <h2 className="text-xl font-bold mb-3 text-cyan-400">2. Add a Slogan (Optional)</h2>
+              <input
+                type="text"
+                value={slogan}
+                onChange={(e) => setSlogan(e.target.value)}
+                placeholder="e.g., 'Freshly Brewed Daily'"
+                className="w-full bg-gray-800 border-2 border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-colors"
+                aria-label="Slogan for the mockup"
               />
             </div>
+
+            <div>
+              <h2 className="text-xl font-bold mb-3 text-cyan-400">3. Choose a Scene</h2>
+              <SceneSelector scenes={SCENES} selectedScene={selectedScene} onSceneSelect={handleSceneSelect} />
+            </div>
+            
+            <div>
+                <h2 className="text-xl font-bold mb-3 text-cyan-400">4. Choose Aspect Ratio</h2>
+                <AspectRatioSelector ratios={ASPECT_RATIOS} selectedRatio={selectedAspectRatio} onRatioSelect={handleAspectRatioSelect}/>
+            </div>
+
             <button
               onClick={handleGenerateClick}
-              disabled={!originalImage || !selectedScene || isLoading}
-              className="w-full bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-4 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg hover:shadow-cyan-500/50 text-xl"
+              disabled={isLoading || !originalImage || !selectedScene}
+              className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 text-lg shadow-lg hover:shadow-cyan-500/30 disabled:shadow-none flex items-center justify-center gap-2"
             >
-              {isLoading ? 'Generating...' : '3. Create Mockup'}
+              {isLoading ? 'Creating...' : 'Create Mockup'}
             </button>
           </div>
 
           {/* Right Column: Display */}
-          <div className="flex flex-col gap-4">
-            <h2 className="text-2xl font-bold text-cyan-400">Result</h2>
+          <div className="flex flex-col gap-4 items-center">
             <MockupDisplay
               isLoading={isLoading}
               loadingMessage={loadingMessage}
               error={error}
               generatedImage={generatedImage}
+              aspectRatio={selectedAspectRatio}
             />
-            {generatedImage && !isLoading && !error && lastUsedPrompt && (
-              <div className="p-4 bg-gray-800/50 rounded-lg space-y-2">
-                <h3 className="font-semibold text-cyan-400">Prompt Used</h3>
-                <p className="text-sm text-gray-300 bg-gray-900/50 p-3 rounded-md font-mono whitespace-pre-wrap break-words">
-                  {lastUsedPrompt}
-                </p>
-              </div>
-            )}
-            {generatedImage && !isLoading && !error && (
-              <button
-                onClick={handleDownload}
-                className="w-full flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out shadow-lg hover:shadow-green-500/50 text-lg"
-              >
-                <DownloadIcon className="h-6 w-6" />
-                <span>Download Mockup</span>
+            {generatedImage && !isLoading && (
+               <button onClick={handleDownload} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-5 rounded-lg transition-colors">
+                <DownloadIcon className="w-5 h-5" />
+                Download
               </button>
+            )}
+             {lastUsedPrompt && !isLoading && !error && (
+              <div className="w-full mt-4 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                <h3 className="text-sm font-semibold text-gray-300 mb-2">AI Prompt Used:</h3>
+                <p className="text-xs text-gray-400 font-mono">{lastUsedPrompt}</p>
+              </div>
             )}
           </div>
         </div>

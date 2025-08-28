@@ -7,9 +7,28 @@ interface MockupDisplayProps {
   loadingMessage: string | null;
   error: string | null;
   generatedImage: string | null;
+  aspectRatio: string;
 }
 
-export const MockupDisplay: React.FC<MockupDisplayProps> = ({ isLoading, loadingMessage, error, generatedImage }) => {
+const getAspectRatioClass = (ratio: string): string => {
+  switch (ratio) {
+    case '1:1':
+      return 'aspect-square';
+    case '16:9':
+      return 'aspect-video';
+    case '9:16':
+      return 'aspect-[9/16]';
+    case '4:3':
+      return 'aspect-[4/3]';
+    case '3:4':
+      return 'aspect-[3/4]';
+    default:
+      return 'aspect-square';
+  }
+};
+
+
+export const MockupDisplay: React.FC<MockupDisplayProps> = ({ isLoading, loadingMessage, error, generatedImage, aspectRatio }) => {
   const renderContent = () => {
     if (isLoading) {
       return (
@@ -49,8 +68,10 @@ export const MockupDisplay: React.FC<MockupDisplayProps> = ({ isLoading, loading
     );
   };
 
+  const aspectRatioClass = getAspectRatioClass(aspectRatio);
+
   return (
-    <div className="w-full aspect-square bg-gray-800 rounded-lg flex items-center justify-center p-4 border-2 border-dashed border-gray-700">
+    <div className={`w-full ${aspectRatioClass} bg-gray-800 rounded-lg flex items-center justify-center p-4 border-2 border-dashed border-gray-700 transition-all duration-300`}>
       {renderContent()}
     </div>
   );
